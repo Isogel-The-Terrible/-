@@ -287,14 +287,26 @@ function drawText() {
   const size = Number(fontSizeInput.value);
   const outline = Number(outlineInput.value);
   const font = `700 ${size}px "CustomFont", Arial, sans-serif`;
-  const parts = parseText(textInput.value.toUpperCase());
   const spacing = LETTER_SPACING;
 
   if (!textInput.value.trim()) return;
 
-  const lines = wrapParts(parts, 1120, font, spacing);
+  const rawText = textInput.value.toUpperCase();
+  const explicitLines = rawText.split('\n');
+  const allLines = [];
+  
+  for (const explicitLine of explicitLines) {
+    if (explicitLine.trim() === '') {
+      allLines.push([]); 
+      continue;
+    }
+    const parts = parseText(explicitLine);
+    const wrappedLines = wrapParts(parts, 1120, font, spacing);
+    allLines.push(...wrappedLines);
+  }
+
   const lineHeight = size * 1.12;
-  const totalHeight = lines.length * lineHeight;
+  const totalHeight = allLines.length * lineHeight;
   let y = (canvas.height - totalHeight) / 2 + size * 0.85;
 
   ctx.font = font;
@@ -304,7 +316,12 @@ function drawText() {
   ctx.lineWidth = outline;
   ctx.strokeStyle = "#000";
 
-  for (const line of lines) {
+  for (const line of allLines) {
+    if (line.length === 0) {
+       y += lineHeight;
+       continue;
+    }
+
     const lineWidth = line.reduce((sum, p) => sum + spacedWidth(p.text, spacing), 0);
     let x = (canvas.width - lineWidth) / 2;
 
