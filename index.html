@@ -292,7 +292,7 @@ function drawText() {
   if (!textInput.value.trim()) return;
 
   const rawText = textInput.value.toUpperCase();
-  const explicitLines = rawText.split('$');
+  const explicitLines = rawText.split('#');
   const allLines = [];
   
   for (const explicitLine of explicitLines) {
