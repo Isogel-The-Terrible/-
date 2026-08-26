@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ХҮЙТЭН ЦАЙ ГАРЧИГ ҮҮСГЭГЧ</title>
+<style>
+  @font-face {
+    font-family: "CustomFont";
+    src: url("./font/your-font.ttf") format("truetype");
+    font-display: swap;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #181818;
+    color: #eee;
+    font-family: Arial, sans-serif;
+  }
+
+  .app {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+  }
+
+  h1 { margin: 0 0 16px; font-size: 24px; }
+
+  .controls {
+    display: grid;
+    gap: 12px;
+    background: #242424;
+    padding: 16px;
+    border-radius: 10px;
+    margin-bottom: 18px;
+  }
+
+  label {
+    font-size: 14px;
+    color: #ccc;
+  }
+
+  textarea, input[type="number"] {
+    width: 100%;
+    margin-top: 6px;
+    padding: 10px;
+    background: #111;
+    color: white;
+    border: 1px solid #444;
+    border-radius: 6px;
+  }
+
+  textarea {
+    min-height: 90px;
+    resize: vertical;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+
+  button, .file-label {
+    border: 0;
+    border-radius: 6px;
+    padding: 10px 15px;
+    background: #444;
+    color: white;
+    cursor: pointer;
+  }
+
+  button:hover, .file-label:hover { background: #555; }
+  .primary { background: #8b0000; }
+  .primary:hover { background: #a00000; }
+
+  .preview {
+    width: 100%;
+    overflow: hidden;
+    background: #000;
+    border-radius: 10px;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .chapter-controls {
+    display: none;
+    grid-template-columns: 1fr 120px;
+    gap: 12px;
+  }
+
+  .chapter-controls.active { display: grid; }
+
+  .hint {
+    font-size: 12px;
+    color: #999;
+  }
+
+  input[type="range"] { width: 180px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>ХҮЙТЭН ЦАЙ ГАРЧИГ ҮҮСГЭГЧ</h1>
+
+  <div class="controls">
+    <label>
+      Гарчиг
+      <textarea id="text" placeholder="Жишээ: БИ ОЙД **УЛААН** НҮД ХАРСАН"></textarea>
+    </label>
+
+    <div class="row">
+      <label>
+        Хэмжээ
+        <input id="fontSize" type="range" min="30" max="150" value="72">
+      </label>
+
+      <label>
+        Хүрээ
+        <input id="outline" type="range" min="2" max="16" value="7">
+      </label>
+
+
+      <label>
+        <input id="chapterEnabled" type="checkbox">
+        Цуврал
+      </label>
+    </div>
+
+    <div id="chapterControls" class="chapter-controls">
+      <label>
+        Дугаар
+        <input id="chapter" type="number" min="1" value="1">
+      </label>
+      <label>
+        Гэрэл
+        <input id="glow" type="range" min="0" max="40" value="18">
+      </label>
+    </div>
+
+    <div class="row">
+      <label class="file-label">
+        Зураг сонгох
+        <input id="imageInput" type="file" accept="image/*" hidden>
+      </label>
+
+      <button id="reset">Дахин эхлэх</button>
+      <button id="download" class="primary">Татах</button>
+    </div>
+
+    <div class="hint">
+      **үг/өгүүлбэр** Бичсэн үг улаан өнгөтэй болно
+    </div>
+  </div>
+
+  <div class="preview">
+    <canvas id="canvas" width="1280" height="720"></canvas>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const textInput = document.getElementById("text");
+const fontSizeInput = document.getElementById("fontSize");
+const outlineInput = document.getElementById("outline");
+const LETTER_SPACING = 3;
+const chapterEnabled = document.getElementById("chapterEnabled");
+const chapterControls = document.getElementById("chapterControls");
+const chapterInput = document.getElementById("chapter");
+const glowInput = document.getElementById("glow");
+const imageInput = document.getElementById("imageInput");
+
+let backgroundImage = null;
+let defaultImage = null;
+
+function drawDefaultBackground() {
+  if (defaultImage) {
+    drawCoverCrop(defaultImage);
+    return;
+  }
+  ctx.fillStyle = "#080808";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawCoverCrop(img) {
+  const targetRatio = canvas.width / canvas.height;
+  const sourceRatio = img.width / img.height;
+
+  let sx, sy, sw, sh;
+
+  if (sourceRatio > targetRatio) {
+    sh = img.height;
+    sw = sh * targetRatio;
+    sx = (img.width - sw) / 2;
+    sy = 0;
+  } else {
+    sw = img.width;
+    sh = sw / targetRatio;
+    sx = 0;
+    sy = (img.height - sh) / 2;
+  }
+
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+}
+
+function parseText(text) {
+  const parts = [];
+  const regex = /\*\*(.*?)\*\*/g;
+  let last = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > last) {
+      parts.push({ text: text.slice(last, match.index), red: false });
+    }
+    parts.push({ text: match[1], red: true });
+    last = regex.lastIndex;
+  }
+
+  if (last < text.length) {
+    parts.push({ text: text.slice(last), red: false });
+  }
+
+  return parts;
+}
+
+function spacedWidth(text, spacing) {
+  if (!text) return 0;
+  return ctx.measureText(text).width + Math.max(0, text.length - 1) * spacing;
+}
+
+function drawSpacedText(text, x, y, spacing, stroke) {
+  let currentX = x;
+
+  for (const char of text) {
+    if (stroke) {
+      ctx.strokeText(char, currentX, y);
+    } else {
+      ctx.fillText(char, currentX, y);
+    }
+    currentX += ctx.measureText(char).width + spacing;
+  }
+  return currentX;
+}
+
+function wrapParts(parts, maxWidth, font, spacing) {
+  ctx.font = font;
+  const words = [];
+
+  for (const part of parts) {
+    const tokens = part.text.split(/(\s+)/);
+    for (const token of tokens) {
+      if (token) words.push({ text: token, red: part.red });
+    }
+  }
+
+  const lines = [];
+  let line = [];
+  let width = 0;
+
+  for (const word of words) {
+    const w = spacedWidth(word.text, spacing);
+
+    if (width + w > maxWidth && line.length && word.text.trim()) {
+      lines.push(line);
+      line = [];
+      width = 0;
+    }
+
+    line.push(word);
+    width += w;
+  }
+
+  if (line.length) lines.push(line);
+  return lines;
+}
+
+function drawText() {
+  const size = Number(fontSizeInput.value);
+  const outline = Number(outlineInput.value);
+  const font = `700 ${size}px "CustomFont", Arial, sans-serif`;
+  const parts = parseText(textInput.value.toUpperCase());
+  const spacing = LETTER_SPACING;
+
+  if (!textInput.value.trim()) return;
+
+  const lines = wrapParts(parts, 1120, font, spacing);
+  const lineHeight = size * 1.12;
+  const totalHeight = lines.length * lineHeight;
+  let y = (canvas.height - totalHeight) / 2 + size * 0.85;
+
+  ctx.font = font;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = outline;
+  ctx.strokeStyle = "#000";
+
+  for (const line of lines) {
+    const lineWidth = line.reduce((sum, p) => sum + spacedWidth(p.text, spacing), 0);
+    let x = (canvas.width - lineWidth) / 2;
+
+    for (const part of line) {
+      drawSpacedText(part.text, x, y, spacing, true);
+      ctx.fillStyle = part.red ? "#ff2020" : "#fff";
+      drawSpacedText(part.text, x, y, spacing, false);
+      x += spacedWidth(part.text, spacing);
+    }
+
+    y += lineHeight;
+  }
+}
+
+function drawChapter() {
+  if (!chapterEnabled.checked) return;
+
+  const value = `#${chapterInput.value || 1}`;
+  const size = 42;
+  ctx.font = `700 ${size}px "CustomFont", Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.save();
+  ctx.shadowColor = "rgba(255,255,255,0.95)";
+  ctx.shadowBlur = Number(glowInput.value);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(value, canvas.width / 2, canvas.height - 52);
+  ctx.restore();
+
+  // Crisp foreground copy
+  ctx.fillStyle = "#fff";
+  ctx.fillText(value, canvas.width / 2, canvas.height - 52);
+}
+
+function render() {
+  if (backgroundImage) {
+    drawCoverCrop(backgroundImage);
+  } else {
+    drawDefaultBackground();
+  }
+
+  drawText();
+  drawChapter();
+}
+
+imageInput.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const img = new Image();
+  img.onload = () => {
+    backgroundImage = img;
+    render();
+  };
+  img.src = URL.createObjectURL(file);
+});
+
+document.getElementById("reset").addEventListener("click", () => {
+  backgroundImage = null;
+  imageInput.value = "";
+  render();
+});
+
+document.getElementById("download").addEventListener("click", () => {
+  try {
+    canvas.toBlob(blob => {
+      if (!blob) {
+        alert("Could not create the PNG.");
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "nosleep-thumbnail.png";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        link.remove();
+        URL.revokeObjectURL(url);
+      }, 1000);
+    }, "image/png");
+  } catch (error) {
+    console.error(error);
+    alert("PNG download failed.");
+  }
+});
+
+chapterEnabled.addEventListener("change", () => {
+  chapterControls.classList.toggle("active", chapterEnabled.checked);
+  render();
+});
+
+[textInput, fontSizeInput, outlineInput, chapterInput, glowInput]
+  .forEach(el => el.addEventListener("input", render));
+
+const defaultImg = new Image();
+defaultImg.onload = () => {
+  defaultImage = defaultImg;
+  render();
+};
+defaultImg.src = "./image/default.png";
+
+render();
+</script>
+</body>
+</html>
